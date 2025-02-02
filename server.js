@@ -116,6 +116,45 @@ app.get('/fetch-inventory', async (req, res) => {
     }
 });
 
+// Shopify Webhook: Listen for new orders
+app.post('/webhook/orders/create', async (req, res) => {
+    try {
+        console.log("📩 Received Shopify Order Webhook:", JSON.stringify(req.body, null, 2));
+
+        const newOrder = req.body;
+
+        // Store new order in MongoDB
+        await Order.create({
+            id: newOrder.id,
+            order_number: newOrder.name,
+            total_price: newOrder.total_price,
+            line_items: newOrder.line_items.map(item => ({
+                product_id: item.product_id,
+                variant_id: item.variant_id,
+                name: item.name,
+                quantity: item.quantity,
+                price: item.price
+            })),
+            customer: newOrder.customer ? {
+                id: newOrder.customer.id,
+                first_name: newOrder.customer.first_name,
+                last_name: newOrder.customer.last_name,
+                email: newOrder.customer.email
+            } : null,
+            created_at: newOrder.created_at,
+            financial_status: newOrder.financial_status,
+            fulfillment_status: newOrder.fulfillment_status
+        });
+
+        console.log("✅ New Order Stored in MongoDB:", newOrder.id);
+        res.status(200).json({ message: "✅ Order received and stored!" });
+    } catch (error) {
+        console.error("❌ Error processing webhook:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+
 // Start Server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
