@@ -3,20 +3,23 @@ const mongoose = require('mongoose');
 const ProductSchema = new mongoose.Schema({
     id: { type: Number, required: true, unique: true },
     title: { type: String, required: true },
+    description: { type: String },
     vendor: { type: String },
     product_type: { type: String },
-    price: { type: Number },
+    created_at: { type: Date },
+    updated_at: { type: Date },
     variants: [
         {
-            id: Number,
-            title: String,
-            sku: String,
-            inventory_quantity: Number,
-            price: Number
+            id: { type: Number },
+            title: { type: String },
+            price: { type: Number },
+            sku: { type: String },
+            inventory_quantity: { type: Number }
         }
     ],
-    created_at: { type: Date, default: Date.now },
-    updated_at: { type: Date }
+    images: [{ type: String }], // Storing image URLs
+    tags: { type: String }, // Shopify stores tags as a comma-separated string
+    status: { type: String }
 });
 
 module.exports = mongoose.model('Product', ProductSchema);

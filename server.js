@@ -77,13 +77,24 @@ app.get('/fetch-orders', async (req, res) => {
     }
 });
 
-// Fetch and store Shopify customers
+// Fetch and store Shopify customers with full data
 app.get('/fetch-customers', async (req, res) => {
     try {
-        const response = await axios.get(`${SHOPIFY_API_URL}/customers.json`, { headers: HEADERS });
-        const customers = response.data.customers;
+        const response = await axios.get(`${SHOPIFY_API_URL}/customers.json?fields=id,first_name,last_name,email,phone,orders_count,total_spent,created_at,updated_at,addresses`, { headers: HEADERS });
+        const customers = response.data.customers.map(customer => ({
+            id: customer.id,
+            first_name: customer.first_name,
+            last_name: customer.last_name,
+            email: customer.email,
+            phone: customer.phone,
+            orders_count: customer.orders_count,
+            total_spent: customer.total_spent,
+            created_at: customer.created_at,
+            updated_at: customer.updated_at,
+            addresses: customer.addresses
+        }));
         await Customer.insertMany(customers, { ordered: false });
-        res.status(201).json({ message: "✅ Customers fetched and stored!" });
+        res.status(201).json({ message: "✅ Customers fetched and stored with full details!" });
     } catch (error) {
         console.error("❌ Error fetching customers:", error);
         res.status(500).json({ error: error.message });
@@ -93,8 +104,26 @@ app.get('/fetch-customers', async (req, res) => {
 // Fetch and store Shopify products
 app.get('/fetch-products', async (req, res) => {
     try {
-        const response = await axios.get(`${SHOPIFY_API_URL}/products.json`, { headers: HEADERS });
-        const products = response.data.products;
+        const response = await axios.get(`${SHOPIFY_API_URL}/products.json?fields=id,title,body_html,vendor,product_type,created_at,updated_at,variants,images,tags,status`, { headers: HEADERS });
+        const products = response.data.products.map(product => ({
+            id: product.id,
+            title: product.title,
+            description: product.body_html,
+            vendor: product.vendor,
+            product_type: product.product_type,
+            created_at: product.created_at,
+            updated_at: product.updated_at,
+            variants: product.variants.map(variant => ({
+                id: variant.id,
+                title: variant.title,
+                price: variant.price,
+                sku: variant.sku,
+                inventory_quantity: variant.inventory_quantity
+            })),
+            images: product.images.map(image => image.src),
+            tags: product.tags,
+            status: product.status
+        }));
         await Product.insertMany(products, { ordered: false });
         res.status(201).json({ message: "✅ Products fetched and stored!" });
     } catch (error) {
@@ -103,13 +132,18 @@ app.get('/fetch-products', async (req, res) => {
     }
 });
 
-// Fetch and store Shopify inventory
+// Fetch and store Shopify inventory with full data
 app.get('/fetch-inventory', async (req, res) => {
     try {
-        const response = await axios.get(`${SHOPIFY_API_URL}/inventory_levels.json`, { headers: HEADERS });
-        const inventory = response.data.inventory_levels;
+        const response = await axios.get(`${SHOPIFY_API_URL}/inventory_levels.json?fields=inventory_item_id,location_id,available,updated_at`, { headers: HEADERS });
+        const inventory = response.data.inventory_levels.map(item => ({
+            inventory_item_id: item.inventory_item_id,
+            location_id: item.location_id,
+            available: item.available,
+            updated_at: item.updated_at
+        }));
         await Inventory.insertMany(inventory, { ordered: false });
-        res.status(201).json({ message: "✅ Inventory fetched and stored!" });
+        res.status(201).json({ message: "✅ Inventory fetched and stored with full details!" });
     } catch (error) {
         console.error("❌ Error fetching inventory:", error);
         res.status(500).json({ error: error.message });
@@ -153,6 +187,91 @@ app.post('/webhook/orders/create', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+app.post('/webhook/products/create', async (req, res) => {
+    try {
+        console.log("📩 Received Shopify Product Webhook:", JSON.stringify(req.body, null, 2));
+
+        const product = req.body;
+
+        await Product.create({
+            id: product.id,
+            title: product.title,
+            description: product.body_html,
+            vendor: product.vendor,
+            product_type: product.product_type,
+            created_at: product.created_at,
+            updated_at: product.updated_at,
+            variants: product.variants.map(variant => ({
+                id: variant.id,
+                title: variant.title,
+                price: variant.price,
+                sku: variant.sku,
+                inventory_quantity: variant.inventory_quantity
+            })),
+            images: product.images.map(image => image.src),
+            tags: product.tags,
+            status: product.status
+        });
+
+        console.log("✅ New Product Stored in MongoDB:", product.id);
+        res.status(200).json({ message: "✅ Product received and stored!" });
+    } catch (error) {
+        console.error("❌ Error processing product webhook:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+app.post('/webhook/inventory/update', async (req, res) => {
+    try {
+        console.log("📩 Received Shopify Inventory Webhook:", JSON.stringify(req.body, null, 2));
+
+        const inventoryUpdate = req.body;
+
+        await Inventory.findOneAndUpdate(
+            { inventory_item_id: inventoryUpdate.inventory_item_id },
+            {
+                inventory_item_id: inventoryUpdate.inventory_item_id,
+                location_id: inventoryUpdate.location_id,
+                available: inventoryUpdate.available,
+                updated_at: inventoryUpdate.updated_at
+            },
+            { upsert: true }
+        );
+
+        console.log("✅ Inventory Updated in MongoDB:", inventoryUpdate.inventory_item_id);
+        res.status(200).json({ message: "✅ Inventory update received and stored!" });
+    } catch (error) {
+        console.error("❌ Error processing inventory webhook:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+app.post('/webhook/customers/create', async (req, res) => {
+    try {
+        console.log("📩 Received Shopify Customer Webhook:", JSON.stringify(req.body, null, 2));
+
+        const customer = req.body;
+
+        await Customer.create({
+            id: customer.id,
+            first_name: customer.first_name,
+            last_name: customer.last_name,
+            email: customer.email,
+            phone: customer.phone,
+            orders_count: customer.orders_count,
+            total_spent: customer.total_spent,
+            created_at: customer.created_at,
+            updated_at: customer.updated_at,
+            addresses: customer.addresses
+        });
+
+        console.log("✅ New Customer Stored in MongoDB:", customer.id);
+        res.status(200).json({ message: "✅ Customer received and stored!" });
+    } catch (error) {
+        console.error("❌ Error processing customer webhook:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+
 
 
 // Start Server
